@@ -1,7 +1,7 @@
 {
-  "name": "Rolling Wrench AI V11 Stable",
-  "short_name": "RW AI Stable",
-  "start_url": "./?v=v11-stable-fix",
+  "name": "Rolling Wrench AI V11.1",
+  "short_name": "RW AI V11.1",
+  "start_url": "./?v=v11.1-service-toggle",
   "display": "standalone",
   "background_color": "#05070a",
   "theme_color": "#05070a",

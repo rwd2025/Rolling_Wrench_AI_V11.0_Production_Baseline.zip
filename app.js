@@ -6435,3 +6435,167 @@ document.addEventListener("click", function(e){
 
 window.addEventListener("hashchange", function(){ setTimeout(()=>rwdStableRenderApproval(), 10); });
 setTimeout(()=>rwdStableRenderApproval(), 50);
+
+
+/* ===== RWD V11.1 SERVICE CALL TOGGLE ===== */
+window.RWD_SERVICE_CALL_TOGGLE_VERSION = "V11.1 Service Call Toggle";
+
+(function rwdServiceToggleBoot(){
+  try{
+    if(typeof state !== "undefined"){
+      state.settings = state.settings || {};
+      if(typeof state.settings.serviceCallEnabled === "undefined") state.settings.serviceCallEnabled = false;
+      state.settings.serviceCall = Number(state.settings.serviceCall || 250);
+      if(typeof saveState === "function") saveState();
+    }
+  }catch(e){}
+})();
+
+function rwdServiceDefaultEnabled(){
+  try { return !!(state && state.settings && state.settings.serviceCallEnabled); } catch(e){ return false; }
+}
+function rwdServiceDefaultAmount(){
+  try { return Number(state.settings.serviceCall || 250); } catch(e){ return 250; }
+}
+function rwdServiceToggleHtml(prefix, enabled, amount){
+  enabled = typeof enabled === "boolean" ? enabled : rwdServiceDefaultEnabled();
+  amount = Number(amount || rwdServiceDefaultAmount());
+  return `<div class="rwd-service-toggle-box">
+    <label class="rwd-service-toggle-row">
+      <input type="checkbox" id="${prefix}ServiceEnabled" ${enabled ? "checked" : ""}>
+      <span>Service Call</span>
+      <b id="${prefix}ServiceStatus">${enabled ? "ON" : "OFF"}</b>
+    </label>
+    <label>Service Call Amount
+      <input id="${prefix}ServiceAmount" type="number" value="${enabled ? amount : 0}" ${enabled ? "" : "disabled"}>
+    </label>
+  </div>`;
+}
+function rwdBindServiceToggle(prefix){
+  const cb = document.getElementById(prefix+"ServiceEnabled");
+  const amt = document.getElementById(prefix+"ServiceAmount");
+  const st = document.getElementById(prefix+"ServiceStatus");
+  if(!cb || !amt) return;
+  function sync(){
+    const on = cb.checked;
+    amt.disabled = !on;
+    if(!on) amt.value = 0;
+    else if(!Number(amt.value)) amt.value = rwdServiceDefaultAmount();
+    if(st) st.textContent = on ? "ON" : "OFF";
+    try{
+      state.settings.serviceCallEnabled = on;
+      if(on) state.settings.serviceCall = Number(amt.value || rwdServiceDefaultAmount());
+      if(typeof saveState === "function") saveState();
+    }catch(e){}
+    rwdSyncLegacyServiceInputs();
+  }
+  cb.onchange = sync;
+  amt.oninput = function(){
+    try{
+      if(cb.checked){
+        state.settings.serviceCall = Number(amt.value || 0);
+        if(typeof saveState === "function") saveState();
+      }
+    }catch(e){}
+    rwdSyncLegacyServiceInputs();
+  };
+  sync();
+}
+function rwdGetServiceValue(prefix){
+  const cb = document.getElementById(prefix+"ServiceEnabled");
+  const amt = document.getElementById(prefix+"ServiceAmount");
+  if(cb && !cb.checked) return 0;
+  if(amt) return Number(amt.value || 0);
+  return rwdServiceDefaultEnabled() ? rwdServiceDefaultAmount() : 0;
+}
+
+if(typeof rwdStableParsePreview === "function" && !window.__rwdServiceParseWrapped){
+  window.__rwdServiceParseWrapped = true;
+  const oldParse = rwdStableParsePreview;
+  window.rwdStableParsePreview = function(){
+    const p = oldParse();
+    const quoteService = document.getElementById("quoteServiceEnabled") || document.getElementById("qServiceEnabled");
+    const invoiceService = document.getElementById("invoiceServiceEnabled") || document.getElementById("iServiceEnabled");
+    if(quoteService || invoiceService){
+      const prefix = quoteService ? (document.getElementById("quoteServiceEnabled") ? "quote" : "q") : (document.getElementById("invoiceServiceEnabled") ? "invoice" : "i");
+      p.service = rwdGetServiceValue(prefix);
+      p.call = p.service;
+      const labor = Number(p.hours||0)*Number(p.rate||0);
+      p.total = labor + Number(p.service||0) + Number(p.parts||0) + Number(p.supplies||0);
+    } else if(!rwdServiceDefaultEnabled()){
+      p.service = 0;
+      p.call = 0;
+      const labor = Number(p.hours||0)*Number(p.rate||0);
+      p.total = labor + Number(p.parts||0) + Number(p.supplies||0);
+    }
+    return p;
+  };
+  try{ rwdStableParsePreview = window.rwdStableParsePreview; }catch(e){}
+}
+
+function rwdInjectServiceToggle(){
+  const text = String(document.body.innerText || "").toLowerCase();
+  const isQuote = text.includes("quote") && (text.includes("labor") || text.includes("estimate"));
+  const isInvoice = text.includes("invoice") && (text.includes("labor") || text.includes("total due"));
+  if(!isQuote && !isInvoice) return;
+  if(document.getElementById("quoteServiceEnabled") || document.getElementById("invoiceServiceEnabled") || document.getElementById("rwdServiceToggleInjected")) return;
+
+  const marker = Array.from(document.querySelectorAll("input")).find(i=>{
+    const id = String(i.id||"").toLowerCase();
+    const ph = String(i.placeholder||"").toLowerCase();
+    const label = String(i.closest("label")?.textContent || i.previousElementSibling?.textContent || "").toLowerCase();
+    return id.includes("call") || ph.includes("service") || label.includes("service call");
+  });
+
+  const prefix = isInvoice ? "invoice" : "quote";
+  const wrap = document.createElement("div");
+  wrap.id = "rwdServiceToggleInjected";
+  wrap.innerHTML = rwdServiceToggleHtml(prefix, rwdServiceDefaultEnabled(), rwdServiceDefaultAmount());
+
+  if(marker){
+    const parent = marker.closest("label, .field, div, section") || marker.parentElement;
+    parent.insertAdjacentElement("afterend", wrap);
+  } else {
+    const card = document.querySelector(".card.orange, section, #screen") || document.body;
+    card.appendChild(wrap);
+  }
+  rwdBindServiceToggle(prefix);
+}
+
+function rwdSyncLegacyServiceInputs(){
+  const serviceInputs = Array.from(document.querySelectorAll("input")).filter(i=>{
+    const id = String(i.id||"").toLowerCase();
+    const ph = String(i.placeholder||"").toLowerCase();
+    const label = String(i.closest("label")?.textContent || i.previousElementSibling?.textContent || "").toLowerCase();
+    return id.includes("call") || ph.includes("service call") || label.includes("service call");
+  });
+  const serviceOn = document.getElementById("quoteServiceEnabled") || document.getElementById("invoiceServiceEnabled");
+  const serviceAmt = document.getElementById("quoteServiceAmount") || document.getElementById("invoiceServiceAmount");
+  if(!serviceOn || !serviceInputs.length) return;
+  serviceInputs.forEach(i=>{
+    if(i === serviceAmt) return;
+    i.value = serviceOn.checked ? (serviceAmt?.value || rwdServiceDefaultAmount()) : 0;
+  });
+}
+
+document.addEventListener("input", function(e){
+  if(String(e.target?.id||"").includes("Service")) setTimeout(rwdSyncLegacyServiceInputs, 20);
+}, true);
+document.addEventListener("change", function(e){
+  if(String(e.target?.id||"").includes("Service")) setTimeout(rwdSyncLegacyServiceInputs, 20);
+}, true);
+
+const rwdServiceOldRender = typeof render === "function" ? render : null;
+if(rwdServiceOldRender && !window.__rwdServiceRenderWrapped){
+  window.__rwdServiceRenderWrapped = true;
+  window.render = function(){
+    const out = rwdServiceOldRender.apply(this, arguments);
+    setTimeout(function(){ rwdInjectServiceToggle(); rwdSyncLegacyServiceInputs(); }, 80);
+    return out;
+  };
+  try{ render = window.render; }catch(e){}
+}
+setTimeout(function(){ rwdInjectServiceToggle(); rwdSyncLegacyServiceInputs(); }, 300);
+window.addEventListener("hashchange", function(){
+  setTimeout(function(){ rwdInjectServiceToggle(); rwdSyncLegacyServiceInputs(); }, 150);
+});
