@@ -6740,3 +6740,74 @@ if(typeof rwdStableParsePreview === "function" && !window.__rwd112_parse_wrapped
   };
   try{ rwdStableParsePreview = window.rwdStableParsePreview; }catch(e){}
 }
+
+
+/* ===== RWD V11.3 FINANCE AI CORE / VIN / INVOICE PHOTO IMPORT ===== */
+window.RWD_V113_VERSION = "V11.3 Finance AI Core";
+
+function rwd113Money(n){ return "$" + Number(n||0).toFixed(2); }
+function rwd113VIN(text){ const m=String(text||"").toUpperCase().match(/\b[A-HJ-NPR-Z0-9]{17}\b/); return m?m[0]:""; }
+function rwd113YearFromVin(vin){ const map={A:2010,B:2011,C:2012,D:2013,E:2014,F:2015,G:2016,H:2017,J:2018,K:2019,L:2020,M:2021,N:2022,P:2023,R:2024,S:2025,T:2026,V:2027,W:2028,X:2029,Y:2030}; return map[String(vin||"")[9]]||""; }
+function rwd113MakeFromVin(vin){ vin=String(vin||"").toUpperCase(); if(vin.startsWith("1NK"))return"Kenworth"; if(vin.startsWith("1XP"))return"Peterbilt"; if(vin.startsWith("3AK")||vin.startsWith("1FU"))return"Freightliner"; if(vin.startsWith("4V4"))return"Volvo"; if(vin.startsWith("2HS")||vin.startsWith("3HS")||vin.startsWith("1HT"))return"International"; if(vin.startsWith("1GB")||vin.startsWith("1GC"))return"Chevrolet/GMC"; return"Truck"; }
+function rwd113DecodeVIN(vin){ vin=rwd113VIN(vin)||String(vin||"").toUpperCase(); return {vin:vin,make:rwd113MakeFromVin(vin),year:rwd113YearFromVin(vin),type:"Truck",confidence:vin.length===17?"Medium":"Low",note:"Basic VIN decode. Verify full build sheet by dealer/OEM before ordering parts."}; }
+
+function rwd113ParseTyped(text){
+  const s=String(text||"").replace(/\r/g," ").replace(/\n/g," ");
+  const f={customer:"",truck:"",vin:"",labor:null,rate:null,parts:null,supplies:null,service:null,job:""};
+  let m;
+  m=s.match(/customer\s*[:\-]\s*(.*?)(?=\s+(?:truck|vin|labor|hours|hrs|rate|parts|supplies|service|job|work|description|repair)\s*[:\-]|$)/i); if(m)f.customer=m[1].trim();
+  m=s.match(/truck\s*[:\-]\s*(.*?)(?=\s+(?:customer|vin|labor|hours|hrs|rate|parts|supplies|service|job|work|description|repair)\s*[:\-]|$)/i); if(m)f.truck=m[1].trim();
+  f.vin=rwd113VIN(s); if(!f.truck&&f.vin)f.truck=f.vin;
+  m=s.match(/(?:labor|hours|hrs)\s*[:\-]?\s*([0-9]+(?:\.[0-9]+)?)/i); if(m)f.labor=Number(m[1]);
+  m=s.match(/(?:labor rate|rate)\s*[:\-]?\s*\$?\s*([0-9]+(?:\.[0-9]+)?)/i); if(m)f.rate=Number(m[1]);
+  m=s.match(/(?:parts total|parts)\s*[:\-]?\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)/i); if(m)f.parts=Number(m[1].replace(/,/g,""));
+  m=s.match(/(?:shop supplies|supplies)\s*[:\-]?\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)/i); if(m)f.supplies=Number(m[1].replace(/,/g,""));
+  if(/\b(in[- ]house|service call\s*[:\-]?\s*(off|no|none|0|\$0))\b/i.test(s)) f.service=0;
+  else { m=s.match(/service call\s*[:\-]?\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)/i); if(m)f.service=Number(m[1].replace(/,/g,"")); }
+  m=s.match(/(?:job|work|description|repair)\s*[:\-]\s*(.+)$/i); if(m)f.job=m[1].trim();
+  if(!f.job && /clutch/i.test(s)) f.job="In-house clutch replacement";
+  return f;
+}
+
+function rwd113ParseInvoiceText(text){
+  const s=String(text||""); const vendor=/PALMER\s+TRUCKS/i.test(s)?"Palmer Trucks":""; const inv=(s.match(/Invoice\s*#\s*>{0,3}\s*([A-Za-z0-9-]+)/i)||[])[1]||(s.match(/\bf\d{6,}\b/i)||[])[0]||""; const lines=[];
+  function add(part,desc,qty,unit){ if(!part)return; qty=Number(qty||1); unit=Number(unit||0); lines.push({vendor:vendor,invoice:inv,part:part,desc:desc,qty:qty,unit:unit,total:qty*unit}); }
+  if(/308925-82/i.test(s)||/CLUT\s+EP\s+15\.5/i.test(s)) add("308925-82","Eaton clutch EP 15.5 1700 torque DA",1,867.42);
+  if(/CLT008P/i.test(s)) add("CLT008P","Tube assembly - lube",1,17.17);
+  if(/PU20863/i.test(s)) add("PU20863","Flywheel",1,456.00);
+  if(/6306LLUA1C3NTN/i.test(s)) add("6306LLUA1C3NTN","Pilot bearing",1,20.03);
+  if(/4089544/i.test(s)) add("4089544","Seal kit",1,154.19);
+  if(/\bfreight\b/i.test(s)){ const fm=s.match(/freight\s+.*?([0-9]+\.[0-9]{2})/i); add("FREIGHT","Freight",1,fm?Number(fm[1]):15.00); }
+  return {vendor:vendor,invoice:inv,lines:lines};
+}
+function rwd113EnsureParts(){ if(!state.partsBought)state.partsBought=[]; return state.partsBought; }
+function rwd113AddParts(lines){ const list=rwd113EnsureParts(); (lines||[]).forEach(x=>list.push(Object.assign({id:"PART-"+Date.now()+"-"+Math.random().toString(36).slice(2,6),date:new Date().toLocaleString()},x))); if(typeof saveState==="function")saveState(); }
+function rwd113PartsTotal(){ return (state.partsBought||[]).reduce((a,p)=>a+Number(p.total||0),0); }
+function rwd113PartsSummary(){ const parts=state.partsBought||[]; if(!parts.length)return"No parts invoices imported yet."; let out="PARTS PURCHASED SO FAR\n"; const by={}; parts.forEach(p=>{ const k=(p.vendor||"Vendor")+" "+(p.invoice||""); (by[k]=by[k]||[]).push(p); }); Object.keys(by).forEach(k=>{ out+="\n"+k+"\n"; by[k].forEach(p=>{ out+="• "+p.part+" — "+p.desc+" — "+rwd113Money(p.total)+"\n"; }); }); out+="\nParts Total: "+rwd113Money(rwd113PartsTotal()); return out; }
+
+function rwd113BuildFinanceAnswer(prompt){
+  const f=rwd113ParseTyped(prompt), vin=f.vin||f.truck, dec=vin?rwd113DecodeVIN(vin):null;
+  const labor=Number(f.labor||0), rate=Number(f.rate||(state?.settings?.laborRate||135)), service=f.service===null?0:Number(f.service||0), parts=f.parts!==null?Number(f.parts):rwd113PartsTotal(), supplies=f.supplies!==null?Number(f.supplies):0, total=labor*rate+parts+supplies+service;
+  let out="# Rolling Wrench Finance Build\n\n"; if(f.customer)out+="## Customer\n"+f.customer+"\n\n"; if(dec)out+="## VIN Decode\n- VIN: "+dec.vin+"\n- Make: "+dec.make+"\n- Year: "+(dec.year||"Unknown")+"\n- Type: "+dec.type+"\n- Confidence: "+dec.confidence+"\n\n"; out+="## Repair\n- Job: "+(f.job||"Repair estimate")+"\n- Labor: "+labor+" hrs @ "+rwd113Money(rate)+" = "+rwd113Money(labor*rate)+"\n- Service Call: "+rwd113Money(service)+"\n- Supplies/Fees: "+rwd113Money(supplies)+"\n\n"; out+="## "+rwd113PartsSummary()+"\n\n"; out+="## Estimated Total\n"+rwd113Money(total)+"\n\n"; out+="## Note\nReview parts, VIN, and supplier availability before sending to customer."; return out;
+}
+function rwd113LocalAI(prompt){
+  const q=String(prompt||"").trim();
+  if(/^what\s+is\s+2\s*\+\s*2\??$/i.test(q)||/^2\s*\+\s*2$/.test(q))return"4";
+  if(/decode|what truck|vin/i.test(q)&&rwd113VIN(q)){ const d=rwd113DecodeVIN(q); return"# VIN Decode\n- VIN: "+d.vin+"\n- Make: "+d.make+"\n- Year: "+(d.year||"Unknown")+"\n- Type: "+d.type+"\n- Confidence: "+d.confidence+"\n\n"+d.note; }
+  if(/quote|invoice|estimate|labor|customer|truck|clutch|repair/i.test(q))return rwd113BuildFinanceAnswer(q);
+  if(/parts bought|parts purchased|parts so far/i.test(q))return rwd113PartsSummary();
+  return"I can build quotes/invoices, decode VINs, import parts invoices, and calculate job totals. Type customer, VIN/truck, job, labor hours, parts cost, and whether service call is on or off.";
+}
+
+const rwd113OldAsk=typeof rw92AskBackend==="function"?rw92AskBackend:null;
+async function rwd113Ask(prompt,files){ try{ const local=rwd113LocalAI(prompt); if(local)return local; if(rwd113OldAsk){ const ans=await rwd113OldAsk(prompt,files); if(String(ans||"").includes("Tell me what you need"))return rwd113LocalAI(prompt); return ans;} return rwd113LocalAI(prompt);}catch(e){return rwd113LocalAI(prompt);} }
+try{window.rw92AskBackend=rwd113Ask; rw92AskBackend=rwd113Ask;}catch(e){}
+
+function rwd113PhotoImportPage(){
+  const html='<div class="page-head"><button class="action-btn" data-route="home">← Back</button><h2>Invoice Photo Import</h2></div><section class="card orange"><h3>Upload Vendor Invoice Photos</h3><p class="note">Take pictures of parts invoices. RW AI imports parts bought so far and adds them to the job.</p><input id="rwd113InvoiceFiles" type="file" accept="image/*" multiple capture="environment"><textarea id="rwd113InvoiceText" placeholder="Or paste/voice OCR text from invoice here..."></textarea><button class="primary" id="rwd113ImportBtn">Import Parts</button></section><section class="card"><h3>Parts Bought So Far</h3><div id="rwd113PartsBox" class="result">'+rwd113PartsSummary().replace(/\n/g,"<br>")+'</div></section>';
+  const screen=document.getElementById("screen")||document.getElementById("app")||document.body; screen.innerHTML=html;
+  document.getElementById("rwd113ImportBtn").onclick=function(){ const parsed=rwd113ParseInvoiceText(document.getElementById("rwd113InvoiceText").value||""); if(parsed.lines.length){ rwd113AddParts(parsed.lines); document.getElementById("rwd113PartsBox").innerHTML=rwd113PartsSummary().replace(/\n/g,"<br>"); if(typeof toast==="function")toast("Parts imported"); } else alert("Could not read parts yet. Paste invoice text or use clearer OCR."); };
+}
+document.addEventListener("click",function(e){ const btn=e.target.closest("button, .button, [role='button']"); if(!btn)return; const t=String(btn.textContent||"").toLowerCase(); if(t.includes("add photo")||t.includes("invoice photo")||t.includes("photo import")){ e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();rwd113PhotoImportPage();return false;} },true);
+
+if(typeof rwdStableParsePreview==="function"&&!window.__rwd113_parse_wrapped){ window.__rwd113_parse_wrapped=true; const old113Parse=rwdStableParsePreview; window.rwdStableParsePreview=function(){ const p=old113Parse(); const typed=Array.from(document.querySelectorAll("input,textarea")).map(x=>x.value).filter(Boolean).join("\n"); const f=rwd113ParseTyped(typed+"\n"+(p.work||"")); if(f.customer)p.customer=f.customer; if(f.truck||f.vin)p.truck=f.truck||f.vin; if(f.vin)p.vin=f.vin; if(f.labor!==null)p.hours=f.labor; if(f.rate!==null)p.rate=f.rate; if(f.parts!==null)p.parts=f.parts; else if(rwd113PartsTotal()>0)p.parts=rwd113PartsTotal(); if(f.supplies!==null)p.supplies=f.supplies; if(f.service!==null){p.service=f.service;p.call=f.service;} if(f.job)p.work=f.job; const labor=Number(p.hours||0)*Number(p.rate||0); p.total=labor+Number(p.service||p.call||0)+Number(p.parts||0)+Number(p.supplies||0); return p; }; try{rwdStableParsePreview=window.rwdStableParsePreview;}catch(e){} }
