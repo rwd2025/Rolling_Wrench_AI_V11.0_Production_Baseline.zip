@@ -6599,3 +6599,144 @@ setTimeout(function(){ rwdInjectServiceToggle(); rwdSyncLegacyServiceInputs(); }
 window.addEventListener("hashchange", function(){
   setTimeout(function(){ rwdInjectServiceToggle(); rwdSyncLegacyServiceInputs(); }, 150);
 });
+
+
+/* ===== RWD V11.2 NO AUTO TEMPLATES ===== */
+window.RWD_TEMPLATES_DISABLED = true;
+window.RWD_NO_TEMPLATE_VERSION = "V11.2 Typed Fields Only";
+
+function rwd112ValMatch(text, re){
+  var m = String(text || "").replace(/\n/g," ").match(re);
+  return m ? String(m[1] || "").trim() : "";
+}
+function rwd112ParseTyped(text){
+  var s = String(text || "").replace(/\r/g," ").replace(/\n/g," ");
+  var f = {customer:"", truck:"", vin:"", labor:null, rate:null, parts:null, supplies:null, service:null, desc:""};
+
+  f.customer = rwd112ValMatch(s, /customer\s*[:\-]\s*(.*?)(?=\s+(truck|vin|labor|hours|hrs|rate|parts|supplies|service|job|work|description)\s*[:\-]|$)/i);
+  f.truck = rwd112ValMatch(s, /truck\s*[:\-]\s*(.*?)(?=\s+(customer|vin|labor|hours|hrs|rate|parts|supplies|service|job|work|description)\s*[:\-]|$)/i);
+  var vin = s.match(/\b[A-HJ-NPR-Z0-9]{17}\b/i);
+  if(vin) f.vin = vin[0].toUpperCase();
+  if(!f.truck && f.vin) f.truck = f.vin;
+
+  var lm = s.match(/(?:labor|hours|hrs)\s*[:\-]?\s*([0-9]+(?:\.[0-9]+)?)/i);
+  if(lm) f.labor = Number(lm[1]);
+  var rm = s.match(/(?:labor rate|rate)\s*[:\-]?\s*\$?\s*([0-9]+(?:\.[0-9]+)?)/i);
+  if(rm) f.rate = Number(rm[1]);
+  var pm = s.match(/(?:parts total|parts)\s*[:\-]?\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)/i);
+  if(pm) f.parts = Number(pm[1].replace(/,/g,""));
+  var sm = s.match(/(?:shop supplies|supplies)\s*[:\-]?\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)/i);
+  if(sm) f.supplies = Number(sm[1].replace(/,/g,""));
+
+  if(/\b(in[- ]house|service call\s*[:\-]?\s*(off|no|none|0|\$0))\b/i.test(s)) f.service = 0;
+  else {
+    var svc = s.match(/service call\s*[:\-]?\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)/i);
+    if(svc) f.service = Number(svc[1].replace(/,/g,""));
+    else if(/service call\s*[:\-]?\s*(on|yes)/i.test(s)) f.service = Number((state && state.settings && state.settings.serviceCall) || 250);
+  }
+
+  f.desc = rwd112ValMatch(s, /(?:job|work|description|repair)\s*[:\-]\s*(.+)$/i);
+
+  return f;
+}
+function rwd112FindInput(words){
+  var inputs = Array.from(document.querySelectorAll("input, textarea"));
+  for(var i=0;i<inputs.length;i++){
+    var el = inputs[i];
+    var hay = [
+      el.id || "",
+      el.name || "",
+      el.placeholder || "",
+      (el.closest("label") && el.closest("label").textContent) || "",
+      (el.previousElementSibling && el.previousElementSibling.textContent) || ""
+    ].join(" ").toLowerCase();
+    for(var j=0;j<words.length;j++){
+      if(hay.indexOf(words[j]) >= 0) return el;
+    }
+  }
+  return null;
+}
+function rwd112Set(words, val){
+  if(val === null || typeof val === "undefined" || val === "") return;
+  var el = rwd112FindInput(words);
+  if(!el) return;
+  el.value = val;
+  el.dispatchEvent(new Event("input",{bubbles:true}));
+  el.dispatchEvent(new Event("change",{bubbles:true}));
+}
+function rwd112Apply(text){
+  var f = rwd112ParseTyped(text);
+
+  rwd112Set(["customer"], f.customer);
+  rwd112Set(["truck","vin","unit"], f.truck || f.vin);
+  rwd112Set(["labor hours","hours","hrs"], f.labor);
+  rwd112Set(["rate"], f.rate || ((state && state.settings && state.settings.laborRate) || 135));
+  rwd112Set(["parts total","parts"], f.parts);
+  rwd112Set(["supplies","shop supplies"], f.supplies);
+
+  var serviceOn = document.getElementById("quoteServiceEnabled") || document.getElementById("invoiceServiceEnabled");
+  var serviceAmt = document.getElementById("quoteServiceAmount") || document.getElementById("invoiceServiceAmount");
+  if(serviceOn && f.service !== null){
+    serviceOn.checked = Number(f.service) > 0;
+    serviceOn.dispatchEvent(new Event("change",{bubbles:true}));
+    if(serviceAmt){
+      serviceAmt.value = Number(f.service || 0);
+      serviceAmt.dispatchEvent(new Event("input",{bubbles:true}));
+    }
+  }
+
+  // Description only if explicitly typed as job/work/description/repair.
+  if(f.desc) rwd112Set(["job description","description","work"], f.desc);
+
+  try{
+    state.truck = state.truck || {};
+    if(f.customer) state.truck.customer = f.customer;
+    if(f.truck || f.vin) state.truck.unit = f.truck || f.vin;
+    if(f.vin) state.truck.vin = f.vin;
+    if(typeof saveState === "function") saveState();
+  }catch(e){}
+
+  return f;
+}
+
+/* Intercept AI FILL / FILL buttons and stop old auto templates from running. */
+document.addEventListener("click", function(e){
+  var btn = e.target.closest("button, .button, [role='button']");
+  if(!btn) return;
+  var label = String(btn.textContent || btn.value || "").toLowerCase().trim();
+  if(label.indexOf("ai fill") >= 0 || label === "fill"){
+    var box = btn.closest("section, .card, div") || document;
+    var typed = Array.from(box.querySelectorAll("input,textarea")).map(function(x){return x.value}).filter(Boolean).join("\n");
+    if(!typed) typed = Array.from(document.querySelectorAll("input,textarea")).map(function(x){return x.value}).filter(Boolean).join("\n");
+    if(typed){
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+      rwd112Apply(typed);
+      if(typeof toast === "function") toast("Filled typed fields only");
+      return false;
+    }
+  }
+}, true);
+
+/* Make save/preview capture use parsed typed fields instead of defaults/templates. */
+if(typeof rwdStableParsePreview === "function" && !window.__rwd112_parse_wrapped){
+  window.__rwd112_parse_wrapped = true;
+  var old112Parse = rwdStableParsePreview;
+  window.rwdStableParsePreview = function(){
+    var p = old112Parse();
+    var typed = Array.from(document.querySelectorAll("input,textarea")).map(function(x){return x.value}).filter(Boolean).join("\n");
+    var f = rwd112ParseTyped(typed);
+    if(f.customer) p.customer = f.customer;
+    if(f.truck || f.vin) p.truck = f.truck || f.vin;
+    if(f.vin) p.vin = f.vin;
+    if(f.labor !== null) p.hours = f.labor;
+    if(f.rate !== null) p.rate = f.rate;
+    if(f.parts !== null) p.parts = f.parts;
+    if(f.supplies !== null) p.supplies = f.supplies;
+    if(f.service !== null){ p.service = f.service; p.call = f.service; }
+    if(f.desc) p.work = f.desc;
+    var labor = Number(p.hours||0) * Number(p.rate||0);
+    p.total = labor + Number(p.service || p.call || 0) + Number(p.parts || 0) + Number(p.supplies || 0);
+    return p;
+  };
+  try{ rwdStableParsePreview = window.rwdStableParsePreview; }catch(e){}
+}
