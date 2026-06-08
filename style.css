@@ -2124,3 +2124,8 @@ body.rw-ai-mode{
 .rwd-service-toggle-row input{width:auto!important;transform:scale(1.25)}
 .rwd-service-toggle-row b{margin-left:auto;color:#ff7a18}
 .rwd-service-toggle-box input[disabled]{opacity:.55}
+
+
+/* RWD V11.4 Safe Photo Upload */
+#rwd114PreviewBox img{display:block}
+#rwd114InvoiceText{min-height:150px}

@@ -6811,3 +6811,134 @@ function rwd113PhotoImportPage(){
 document.addEventListener("click",function(e){ const btn=e.target.closest("button, .button, [role='button']"); if(!btn)return; const t=String(btn.textContent||"").toLowerCase(); if(t.includes("add photo")||t.includes("invoice photo")||t.includes("photo import")){ e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();rwd113PhotoImportPage();return false;} },true);
 
 if(typeof rwdStableParsePreview==="function"&&!window.__rwd113_parse_wrapped){ window.__rwd113_parse_wrapped=true; const old113Parse=rwdStableParsePreview; window.rwdStableParsePreview=function(){ const p=old113Parse(); const typed=Array.from(document.querySelectorAll("input,textarea")).map(x=>x.value).filter(Boolean).join("\n"); const f=rwd113ParseTyped(typed+"\n"+(p.work||"")); if(f.customer)p.customer=f.customer; if(f.truck||f.vin)p.truck=f.truck||f.vin; if(f.vin)p.vin=f.vin; if(f.labor!==null)p.hours=f.labor; if(f.rate!==null)p.rate=f.rate; if(f.parts!==null)p.parts=f.parts; else if(rwd113PartsTotal()>0)p.parts=rwd113PartsTotal(); if(f.supplies!==null)p.supplies=f.supplies; if(f.service!==null){p.service=f.service;p.call=f.service;} if(f.job)p.work=f.job; const labor=Number(p.hours||0)*Number(p.rate||0); p.total=labor+Number(p.service||p.call||0)+Number(p.parts||0)+Number(p.supplies||0); return p; }; try{rwdStableParsePreview=window.rwdStableParsePreview;}catch(e){} }
+
+
+/* ===== RWD V11.4 SAFE PHOTO UPLOAD / NO FREEZE =====
+   Fixes iPhone freeze after choosing image.
+   No heavy OCR on main thread. Preview only + manual invoice text import.
+*/
+window.RWD_V114_PHOTO_SAFE = "V11.4 Safe Photo Upload";
+
+function rwd114EnsurePhotoStore(){
+  try{
+    state.photos = Array.isArray(state.photos) ? state.photos : [];
+    if(typeof saveState === "function") saveState();
+  }catch(e){}
+}
+function rwd114SmallImage(file, maxSide){
+  maxSide = maxSide || 900;
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read image"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Could not load image"));
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        const scale = Math.min(1, maxSide / Math.max(w,h));
+        w = Math.round(w*scale); h = Math.round(h*scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL("image/jpeg",0.68));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+function rwd114PartsSummaryHtml(){
+  if(typeof rwd113PartsSummary === "function"){
+    return rwd113PartsSummary().replace(/\n/g,"<br>");
+  }
+  return "No parts invoices imported yet.";
+}
+function rwd114OpenPhotoImport(){
+  rwd114EnsurePhotoStore();
+  const screen = document.getElementById("screen") || document.getElementById("app") || document.body;
+  screen.innerHTML = `
+    <div class="page-head">
+      <button class="action-btn" id="rwd114Back">← Back</button>
+      <h2>Invoice Photo Import</h2>
+    </div>
+    <section class="card orange">
+      <h3>Add Vendor Invoice Photo</h3>
+      <p class="note">Safe mode: choose photo, preview it, then paste or speak invoice text. This prevents iPhone freezing.</p>
+      <input id="rwd114PhotoInput" type="file" accept="image/*">
+      <div id="rwd114PhotoStatus" class="note">No photo selected.</div>
+      <div id="rwd114PreviewBox"></div>
+    </section>
+    <section class="card">
+      <h3>Invoice Text / Voice Text</h3>
+      <textarea id="rwd114InvoiceText" placeholder="Paste or speak invoice text here. Example: 308925-82 clutch kit 867.42, PU20863 flywheel 456.00"></textarea>
+      <button class="primary" id="rwd114ImportText">Import Parts From Text</button>
+    </section>
+    <section class="card">
+      <h3>Parts Bought So Far</h3>
+      <div id="rwd114PartsBox" class="result">${rwd114PartsSummaryHtml()}</div>
+    </section>
+  `;
+  const back=document.getElementById("rwd114Back");
+  if(back) back.onclick=()=>{ if(typeof setRoute==="function") setRoute("home"); else location.hash="#home"; };
+
+  const input=document.getElementById("rwd114PhotoInput");
+  const status=document.getElementById("rwd114PhotoStatus");
+  const preview=document.getElementById("rwd114PreviewBox");
+  input.onchange = async function(){
+    const file = input.files && input.files[0];
+    if(!file) return;
+    status.textContent = "Loading preview...";
+    try{
+      const small = await rwd114SmallImage(file, 900);
+      state.photos = Array.isArray(state.photos) ? state.photos : [];
+      state.photos.unshift({id:"PHOTO-"+Date.now(), name:file.name, type:file.type, date:new Date().toLocaleString(), preview:small, purpose:"parts_invoice"});
+      if(typeof saveState==="function") saveState();
+      preview.innerHTML = `<img src="${small}" style="max-width:100%;border-radius:16px;margin-top:12px;border:1px solid #33485c">`;
+      status.textContent = "Photo saved as job record. Paste/speak invoice text below to import parts.";
+    }catch(e){
+      status.textContent = "Photo failed: " + (e.message || e);
+    }
+  };
+
+  const importBtn=document.getElementById("rwd114ImportText");
+  importBtn.onclick=function(){
+    const text=document.getElementById("rwd114InvoiceText").value || "";
+    if(!text.trim()) return alert("Paste or speak invoice text first.");
+    let parsed = null;
+    if(typeof rwd113ParseInvoiceText === "function") parsed = rwd113ParseInvoiceText(text);
+    else parsed = {lines:[]};
+    if(parsed.lines && parsed.lines.length && typeof rwd113AddParts === "function"){
+      rwd113AddParts(parsed.lines);
+      document.getElementById("rwd114PartsBox").innerHTML = rwd114PartsSummaryHtml();
+      if(typeof toast==="function") toast("Parts imported");
+    }else{
+      alert("No known parts found in that text yet. Add part number and price, or update parser.");
+    }
+  };
+}
+
+/* Override Add Photo behavior before old handlers freeze page */
+document.addEventListener("click", function(e){
+  const btn=e.target.closest("button, .button, [role='button']");
+  if(!btn) return;
+  const t=String(btn.textContent||btn.value||"").toLowerCase();
+  if(t.includes("add photo") || t.includes("photo") || t.includes("invoice photo")){
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    rwd114OpenPhotoImport();
+    return false;
+  }
+}, true);
+
+/* Guard any old file inputs from trying to process huge images synchronously */
+document.addEventListener("change", function(e){
+  const input=e.target;
+  if(!input || input.type !== "file") return;
+  if(input.id === "rwd114PhotoInput") return;
+  const files = input.files;
+  if(files && files.length && files[0].type && files[0].type.startsWith("image/")){
+    e.stopPropagation();
+  }
+}, true);
