@@ -1,0 +1,2 @@
+node --check app.js exit code: 0
+
